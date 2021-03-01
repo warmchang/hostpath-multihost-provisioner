@@ -48,12 +48,13 @@ func handleDirectoryPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDirectoryDelete(w http.ResponseWriter, r *http.Request) {
-    if err := r.ParseForm(); err != nil {
-        fmt.Fprintf(w, "ParseForm() err: %v", err)
+    keys, ok := r.URL.Query()["path"]
+    if !ok {
+        http.Error(w, "path query param not provided", http.StatusBadRequest)
         return
     }
 
-    path := r.FormValue("path")
+    path := keys[0]
     fmt.Printf("Removing directory %q", path)
 	if err := os.RemoveAll(path); err != nil {
         http.Error(w, err.Error(), http.StatusBadRequest)
