@@ -1,4 +1,4 @@
-package: github.com/kubeboost/hostpath-provisioner
+package: github.com/kubeboost/hostpath-multihost-provisioner
 import:
 - package: github.com/golang/glog
 - package: github.com/kubernetes-incubator/external-storage
