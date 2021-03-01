@@ -57,6 +57,6 @@ func handleDirectoryDelete(w http.ResponseWriter, r *http.Request) {
     fmt.Printf("Removing directory %q", path)
 	if err := os.RemoveAll(path); err != nil {
         http.Error(w, err.Error(), http.StatusBadRequest)
-		return err
+		return
 	}
 }
