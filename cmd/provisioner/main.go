@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+    "context"
 	"errors"
 	"flag"
 	"os"
@@ -25,14 +26,14 @@ import (
     "net"
     "net/http"
     "net/url"
-    "io/ioutil"
+    "fmt"
 
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	//"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"sigs.k8s.io/sig-storage-lib-external-provisioner/v6/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"syscall"
 )
@@ -42,10 +43,6 @@ const (
 	provisionerName           = "hostpath"
 	exponentialBackOffOnError = false
 	failedRetryThreshold      = 5
-	leasePeriod               = controller.DefaultLeaseDuration
-	retryPeriod               = controller.DefaultRetryPeriod
-	renewDeadline             = controller.DefaultRenewDeadline
-	termLimit                 = controller.DefaultTermLimit
     storageManagerServiceName = "kubeboost-hostpath-storage-manager"
     storageManagerServicePort = "8080"
 )
@@ -86,13 +83,13 @@ func NewHostPathProvisioner() controller.Provisioner {
 var _ controller.Provisioner = &hostPathProvisioner{}
 
 // Provision creates a storage asset and returns a PV object representing it.
-func (p *hostPathProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
+func (p *hostPathProvisioner) Provision(ctx context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
 	path := path.Join(p.pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
 	glog.Infof("creating backing directory: %v", path)
     createDirectory(path)
 
 
-	reclaimPolicy := options.PersistentVolumeReclaimPolicy
+	reclaimPolicy := *options.StorageClass.ReclaimPolicy
 	if p.reclaimPolicy != "" {
 		reclaimPolicy = v1.PersistentVolumeReclaimPolicy(p.reclaimPolicy)
 	}
@@ -118,7 +115,7 @@ func (p *hostPathProvisioner) Provision(options controller.VolumeOptions) (*v1.P
 		},
 	}
 
-	return pv, nil
+	return pv, controller.ProvisioningFinished, nil
 }
 
 
@@ -138,9 +135,9 @@ func createDirectory(path string) error {
 
     results := make(chan error)
     for _, ip := range ips {
-        go func(ip IP) {
-            url := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
-            resp, err := http.PostForm(url, url.Values{"path": {path}})
+        go func(ip net.IP) {
+            targetUrl := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
+            resp, err := http.PostForm(targetUrl, url.Values{"path": {path}})
             if err != nil {
                 results <- err
                 return
@@ -151,13 +148,12 @@ func createDirectory(path string) error {
                 results <- HttpStatusError{resp.StatusCode}
                 return
             }
-            fmt.Println(resp.StatusText)
             results <- nil
         }(ip)
     }
 
     for range ips {
-        err <- results    
+        err := <- results    
         if err != nil {
             return err
         }
@@ -168,7 +164,7 @@ func createDirectory(path string) error {
 
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
-func (p *hostPathProvisioner) Delete(volume *v1.PersistentVolume) error {
+func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVolume) error {
 	ann, ok := volume.Annotations["hostPathProvisionerIdentity"]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
@@ -214,6 +210,12 @@ func main() {
 
 	// Start the provision controller which will dynamically provision hostPath
 	// PVs
-	pc := controller.NewProvisionController(clientset, resyncPeriod, provisionerName, hostPathProvisioner, serverVersion.GitVersion, exponentialBackOffOnError, failedRetryThreshold, leasePeriod, renewDeadline, retryPeriod, termLimit)
-	pc.Run(wait.NeverStop)
+	pc := controller.NewProvisionController(clientset, 
+        provisionerName, 
+        hostPathProvisioner,
+        serverVersion.GitVersion,
+        controller.LeaderElection(true),
+    )
+
+	pc.Run(context.Background())
 }
