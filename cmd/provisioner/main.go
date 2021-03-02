@@ -22,6 +22,10 @@ import (
 	"os"
 	"path"
 	"time"
+    "net"
+    "net/http"
+    "net/url"
+    "io/ioutil"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
@@ -42,6 +46,8 @@ const (
 	retryPeriod               = controller.DefaultRetryPeriod
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
+    storageManagerServiceName = "kubeboost-hostpath-storage-manager"
+    storageManagerServicePort = "8080"
 )
 
 type hostPathProvisioner struct {
@@ -83,7 +89,8 @@ var _ controller.Provisioner = &hostPathProvisioner{}
 func (p *hostPathProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
 	path := path.Join(p.pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
 	glog.Infof("creating backing directory: %v", path)
-    // TODO: Create directory.
+    createDirectory(path)
+
 
 	reclaimPolicy := options.PersistentVolumeReclaimPolicy
 	if p.reclaimPolicy != "" {
@@ -112,6 +119,51 @@ func (p *hostPathProvisioner) Provision(options controller.VolumeOptions) (*v1.P
 	}
 
 	return pv, nil
+}
+
+
+type HttpStatusError struct {
+    status int
+}
+
+func (e HttpStatusError) Error() string {
+    return fmt.Sprintf("HTTP Status Error with status code: %v", e.status)
+}
+
+func createDirectory(path string) error {
+    ips, err := net.LookupIP(storageManagerServiceName)
+    if err != nil {
+        return err
+    }
+
+    results := make(chan error)
+    for _, ip := range ips {
+        go func(ip IP) {
+            url := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
+            resp, err := http.PostForm(url, url.Values{"path": {path}})
+            if err != nil {
+                results <- err
+                return
+            }
+            defer resp.Body.Close()
+            
+            if resp.StatusCode != http.StatusOK {
+                results <- HttpStatusError{resp.StatusCode}
+                return
+            }
+            fmt.Println(resp.StatusText)
+            results <- nil
+        }(ip)
+    }
+
+    for range ips {
+        err <- results    
+        if err != nil {
+            return err
+        }
+    }
+
+    return nil
 }
 
 // Delete removes the storage asset that was created by Provision represented
