@@ -1,0 +1,10 @@
+# Build the manager.
+FROM golang:1.15 AS manager-builder
+WORKDIR /app
+COPY . /app
+RUN go build ./cmd/manager/main.go
+
+# Define the manager container.
+FROM scratch
+COPY --from=manager-builder /app/main /hostpath-multihost-manager
+CMD ["/hostpath-multihost-manager"]

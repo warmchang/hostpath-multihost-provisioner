@@ -1,0 +1,10 @@
+# Compile the provisioner.
+FROM golang:1.15 AS provisioner-builder
+WORKDIR /app
+COPY . /app
+RUN go build ./cmd/provisioner/main.go
+
+# Define the provisioner container.
+FROM scratch
+COPY --from=provisioner-builder /app/main /hostpath-multihost-provisioner
+CMD ["/hostpath-multihost-provisioner"]
