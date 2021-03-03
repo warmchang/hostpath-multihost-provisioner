@@ -1,8 +1,8 @@
 ---
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: hostpath-provisioner
+  name: hostpath-multihost-provisioner
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -22,13 +22,13 @@ rules:
 
 ---
 kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: hostpath-provisioner
+  name: hostpath-multihost-provisioner
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: hostpath-provisioner
+  name: hostpath-multihost-provisioner
 subjects:
 - kind: ServiceAccount
   name: default
