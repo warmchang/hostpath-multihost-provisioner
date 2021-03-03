@@ -12,11 +12,11 @@ FROM base AS provisioner-builder
 RUN go build ./cmd/provisioner/main.go
 
 # Define the provisioner container.
-FROM scratch AS hostpath-provisioner
-COPY --from=provisioner-builder /app/main /hostpath-provisioner
-CMD ["/hostpath-provisioner"]
+FROM scratch AS hostpath-multihost-provisioner
+COPY --from=provisioner-builder /app/main /hostpath-multihost-provisioner
+CMD ["/hostpath-multihost-provisioner"]
 
 # Define the manager container.
-FROM scratch AS distributed-hostpath-storage-manager
-COPY --from=manager-builder /app/main /distributed-hostpath-storage-manager
-CMD ["/distributed-hostpath-storage-manager"]
+FROM scratch AS hostpath-multihost-manager
+COPY --from=manager-builder /app/main /hostpath-multihost-manager
+CMD ["/hostpath-multihost-manager"]
