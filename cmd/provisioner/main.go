@@ -22,14 +22,12 @@ import (
 	"flag"
 	"os"
 	"path"
-	"time"
     "net"
     "net/http"
     "net/url"
     "fmt"
 
 	"github.com/golang/glog"
-	//"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"sigs.k8s.io/sig-storage-lib-external-provisioner/v6/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -39,11 +37,8 @@ import (
 )
 
 const (
-	resyncPeriod              = 15 * time.Second
-	provisionerName           = "hostpath"
-	exponentialBackOffOnError = false
-	failedRetryThreshold      = 5
-    storageManagerServiceName = "kubeboost-hostpath-storage-manager"
+	provisionerName           = "kubeboost.github.com/hostpath-multihost-provider"
+    storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
 )
 
@@ -83,11 +78,10 @@ func NewHostPathProvisioner() controller.Provisioner {
 var _ controller.Provisioner = &hostPathProvisioner{}
 
 // Provision creates a storage asset and returns a PV object representing it.
-func (p *hostPathProvisioner) Provision(ctx context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
+func (p *hostPathProvisioner) Provision(_ context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
 	path := path.Join(p.pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
 	glog.Infof("creating backing directory: %v", path)
-    createDirectory(path)
-
+    sendRequestToManager(path, createDir)
 
 	reclaimPolicy := *options.StorageClass.ReclaimPolicy
 	if p.reclaimPolicy != "" {
@@ -98,7 +92,7 @@ func (p *hostPathProvisioner) Provision(ctx context.Context, options controller.
 		ObjectMeta: metav1.ObjectMeta{
 			Name: options.PVName,
 			Annotations: map[string]string{
-				"hostPathProvisionerIdentity": p.identity,
+				"hostPathMultiHostProvisionerIdentity": p.identity,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -127,29 +121,18 @@ func (e HttpStatusError) Error() string {
     return fmt.Sprintf("HTTP Status Error with status code: %v", e.status)
 }
 
-func createDirectory(path string) error {
-    ips, err := net.LookupIP(storageManagerServiceName)
+func sendRequestToManager(path string, requestFunc func(chan error, string, string)) error {
+    glog.Infof("Looking for service %q.", storageManagerServiceName)
+    ips, err := net.LookupHost(storageManagerServiceName)
     if err != nil {
+        glog.Fatalf("Error looking for service: %q", err.Error())
         return err
     }
 
+    glog.Infof("Start sending requests.")
     results := make(chan error)
     for _, ip := range ips {
-        go func(ip net.IP) {
-            targetUrl := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
-            resp, err := http.PostForm(targetUrl, url.Values{"path": {path}})
-            if err != nil {
-                results <- err
-                return
-            }
-            defer resp.Body.Close()
-            
-            if resp.StatusCode != http.StatusOK {
-                results <- HttpStatusError{resp.StatusCode}
-                return
-            }
-            results <- nil
-        }(ip)
+        go requestFunc(results, ip, path)
     }
 
     for range ips {
@@ -162,6 +145,57 @@ func createDirectory(path string) error {
     return nil
 }
 
+func createDir(results chan error, ip string, path string) {
+    glog.Infof("Sending to ip: %q to path %q", ip, path)
+    targetUrl := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
+    glog.Infof("Request sent to %q.", targetUrl)
+
+    resp, err := http.PostForm(targetUrl, url.Values{"path": {path}})
+    if err != nil {
+        results <- err
+        return
+    }
+
+    defer resp.Body.Close()
+    
+    if resp.StatusCode != http.StatusOK {
+        results <- HttpStatusError{resp.StatusCode}
+        return
+    }
+
+    results <- nil
+}
+
+func deleteDir(results chan error, ip string, path string) {
+    glog.Infof("Sending to ip: %q and path %q", ip, path)
+    targetUrl := fmt.Sprintf("http://%v:%v/directories?path=%v", ip, storageManagerServicePort, path)
+    glog.Infof("Request sent to %q.", targetUrl)
+
+    req, err := http.NewRequest(http.MethodDelete, targetUrl, nil)
+    if err != nil {
+        results <- err
+        return
+    }
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        results <- err
+        return
+    }
+
+    defer resp.Body.Close()
+    
+    if resp.StatusCode != http.StatusOK {
+        results <- HttpStatusError{resp.StatusCode}
+        return
+    }
+
+    results <- nil
+}
+
+
+
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
 func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVolume) error {
@@ -173,9 +207,14 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
+    onDelete := volume.Spec.PersistentVolumeReclaimPolicy
+    if onDelete == "Retain" {
+        return nil
+    }
+
 	path := volume.Spec.PersistentVolumeSource.HostPath.Path
 	glog.Info("removing backing directory: %v", path)
-    // TODO: Remove Directory.
+    sendRequestToManager(path, deleteDir)
 
 	return nil
 }
