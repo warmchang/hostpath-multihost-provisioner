@@ -209,7 +209,7 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 
     onDelete := volume.Spec.PersistentVolumeReclaimPolicy
     if onDelete == "Retain" {
-	    glog.Info("Not removing backing directory because policy is Retain.", path)
+	    glog.Infof("Not removing backing directory because policy is Retain.")
         return nil
     }
 
