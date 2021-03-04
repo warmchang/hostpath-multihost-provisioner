@@ -80,7 +80,7 @@ var _ controller.Provisioner = &hostPathProvisioner{}
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *hostPathProvisioner) Provision(_ context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
 	path := path.Join(p.pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
-	glog.Infof("creating backing directory: %v", path)
+	glog.Infof("Creating backing directory: %v", path)
     sendRequestToManager(path, createDir)
 
 	reclaimPolicy := *options.StorageClass.ReclaimPolicy
@@ -209,11 +209,12 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 
     onDelete := volume.Spec.PersistentVolumeReclaimPolicy
     if onDelete == "Retain" {
+	    glog.Info("Not removing backing directory because policy is Retain.", path)
         return nil
     }
 
 	path := volume.Spec.PersistentVolumeSource.HostPath.Path
-	glog.Info("removing backing directory: %v", path)
+	glog.Info("Removing backing directory: %v", path)
     sendRequestToManager(path, deleteDir)
 
 	return nil
