@@ -199,7 +199,7 @@ func deleteDir(results chan error, ip string, path string) {
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
 func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVolume) error {
-	ann, ok := volume.Annotations["hostPathProvisionerIdentity"]
+	ann, ok := volume.Annotations["hostPathMultiHostProvisionerIdentity"]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
 	}
