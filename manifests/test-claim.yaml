@@ -1,9 +1,9 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: hostpath-test-claim
+  name: hostpath-multihost-test-claim
 spec:
-  storageClassName: "hostpath"
+  storageClassName: "hostpath-multihost"
   accessModes:
     - ReadWriteMany
   resources:
