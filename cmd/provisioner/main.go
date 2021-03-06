@@ -62,15 +62,6 @@ type hostPathProvisioner struct {
 	reclaimPolicy string
 }
 
-// NewHostPathProvisioner creates a new hostpath provisioner
-func NewHostPathProvisioner() controller.Provisioner {
-	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
-	return &hostPathProvisioner{
-		identity:      provisionerName,
-		reclaimPolicy: reclaimPolicy,
-	}
-}
-
 var _ controller.Provisioner = &hostPathProvisioner{}
 
 // Provision sends a request to every manager to create a storage asset in every node and returns a PV object representing it.
