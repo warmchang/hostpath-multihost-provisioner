@@ -39,6 +39,7 @@ import (
 
 const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
+    provisionerIdentityLabel  = provisionerName + "-identity"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
     pvDir                     = "/var/kubernetes"
@@ -90,7 +91,7 @@ func (p *hostPathProvisioner) Provision(_ context.Context, options controller.Pr
 		ObjectMeta: metav1.ObjectMeta{
 			Name: options.PVName,
 			Annotations: map[string]string{
-				"hostPathMultiHostProvisionerIdentity": p.identity,
+				provisionerIdentityLabel: p.identity,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -217,7 +218,7 @@ func deleteDir(ip string, path string) error {
 // by the given PV.
 func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVolume) error {
     // Check that the deleted volume is managed by this provisioner. Otherwise, ignore it.
-	ann, ok := volume.Annotations["hostPathMultiHostProvisionerIdentity"]
+	ann, ok := volume.Annotations[provisionerIdentityLabel]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
 	}
