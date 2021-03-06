@@ -24,10 +24,5 @@ spec:
         - name: hostpath-multihost-provisioner
           image: kubeboost/hostpath-multihost-provisioner:latest
           env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-
-#            - name: PV_RECLAIM_POLICY
-#              value: Retain
+#          - name: PV_RECLAIM_POLICY
+#            value: Retain

@@ -56,14 +56,9 @@ type hostPathProvisioner struct {
 
 // NewHostPathProvisioner creates a new hostpath provisioner
 func NewHostPathProvisioner() controller.Provisioner {
-	nodeName := os.Getenv("NODE_NAME")
-	if nodeName == "" {
-		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
-	}
-
 	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
 	return &hostPathProvisioner{
-		identity:      nodeName,
+		identity:      provisionerName,
 		reclaimPolicy: reclaimPolicy,
 	}
 }
