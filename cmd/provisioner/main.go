@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	provisionerName           = "kubeboost.github.com/hostpath-multihost-provider"
+	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
     pvDir                     = "/var/kubernetes"

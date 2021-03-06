@@ -4,4 +4,4 @@ metadata:
   name: hostpath-multihost
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: "kubeboost.github.com/hostpath-multihost-provider"
+provisioner: "kubeboost.github.com/hostpath-multihost-provisioner"
