@@ -18,25 +18,25 @@ spec:
 
     spec:
       containers:
-        - name: hostpath-multihost-manager
-          image: kubeboost/hostpath-multihost-manager:latest
-#          env:
-#            - name: PV_DIR
-#              value: /var/kubernetes
-#
-#            - name: PV_RECLAIM_POLICY
-#              value: Retain
+      - name: hostpath-multihost-manager
+        image: kubeboost/hostpath-multihost-manager:latest
 
-          volumeMounts:
-            - name: pv-volume
-              mountPath: /var/kubernetes
-
-          ports:
-          - name: http
-            containerPort: 8080
-            protocol: TCP
-
-      volumes:
+        # The volumes are always created under /var/kubernetes directory in
+        # the manager pods. So this path shall not be changed.
+        volumeMounts:
         - name: pv-volume
-          hostPath:
-            path: /var/kubernetes
+          mountPath: /var/kubernetes
+
+        # The manager waits for requests to create or delete a directory at
+        # port 8080.
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+
+      # Path in the host where to write the hostpath volumes.
+      # THIS PATH CAN BE CHANGED.
+      volumes:
+      - name: pv-volume
+        hostPath:
+          path: /var/kubernetes

@@ -40,12 +40,10 @@ const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provider"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
+    pvDir                     = "/var/kubernetes"
 )
 
 type hostPathProvisioner struct {
-	// The directory to create PV-backing directories in
-	pvDir string
-
 	// Identity of this hostPathProvisioner, set to node's name. Used to identify
 	// "this" provisioner's PVs.
 	identity string
@@ -62,14 +60,8 @@ func NewHostPathProvisioner() controller.Provisioner {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
-	pvDir := os.Getenv("PV_DIR")
-	if pvDir == "" {
-		glog.Fatal("env variable PV_DIR must be set so that this provisioner knows where to place its data")
-	}
-
 	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
 	return &hostPathProvisioner{
-		pvDir:         pvDir,
 		identity:      nodeName,
 		reclaimPolicy: reclaimPolicy,
 	}
@@ -79,7 +71,7 @@ var _ controller.Provisioner = &hostPathProvisioner{}
 
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *hostPathProvisioner) Provision(_ context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
-	path := path.Join(p.pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
+	path := path.Join(pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
 	glog.Infof("Creating backing directory: %v", path)
     sendRequestToManager(path, createDir)
 
