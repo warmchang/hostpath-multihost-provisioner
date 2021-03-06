@@ -40,12 +40,19 @@ import (
 const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
     provisionerIdentityLabel  = provisionerName + "-identity"
+    reuseReleasedPolicy       = provisionerName + "-reuse-policy"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
     pvDir                     = "/var/kubernetes"
+    reusePolicyNever          = "Never"
+    reusePolicySamePVCName    = "SamePVCName"
+    reusePolicyAlways         = "Always"
 )
 
 type hostPathProvisioner struct {
+    // Kubernetes client to fetch PVCs to check if they are available.
+    client kubernetes.Interface
+
 	// Identity of this hostPathProvisioner, set to node's name. Used to identify
 	// "this" provisioner's PVs.
 	identity string
@@ -277,9 +284,16 @@ func main() {
 		}
 	}
 
+    // Get the reclaim policy from environment variables.
+	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
+
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	hostPathProvisioner := NewHostPathProvisioner()
+	hostPathProvisioner := &hostPathProvisioner {
+        clientset,
+        provisionerName, 
+        reclaimPolicy,        
+    }
 
 	// Start the provision controller which will dynamically provision hostPath
 	// PVs
