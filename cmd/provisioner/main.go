@@ -40,7 +40,7 @@ import (
 const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
     provisionerIdentityLabel  = provisionerName + "-identity"
-    reuseReleasedPolicy       = provisionerName + "-reuse-policy"
+    reuseReleasedPolicyLabel  = provisionerName + "-reuse-policy"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
     pvDir                     = "/var/kubernetes"
@@ -84,12 +84,19 @@ func (p *hostPathProvisioner) Provision(_ context.Context, options controller.Pr
 		reclaimPolicy = v1.PersistentVolumeReclaimPolicy(p.reclaimPolicy)
 	}
 
+    // Get the reuse released policy from the storage class if exists.
+    reuseReleasedPolicy, ok := options.StorageClass.Annotations[reuseReleasedPolicyLabel]
+    if !ok {
+        reuseReleasedPolicy = reusePolicyNever
+    }
+
     // Create the new persistent volume with the computed path and policy.
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: options.PVName,
 			Annotations: map[string]string{
 				provisionerIdentityLabel: p.identity,
+                reuseReleasedPolicyLabel: reuseReleasedPolicy,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -239,6 +246,15 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
     sendRequestToManager(path, deleteDir)
 
 	return nil
+}
+
+func (p *hostPathProvisioner) retain(volume *v1.PersistentVolume) {
+    reuseReleasedPolicy := volume.Annotations[reuseReleasedPolicyLabel]
+    if reuseReleasedPolicy == reusePolicyAlways {
+        volume.Spec.ClaimRef = nil
+    } else if reuseReleasedPolicy == reusePolicySamePVCName {
+        volume.Spec.ClaimRef.UID = ""
+    }
 }
 
 func main() {
