@@ -62,10 +62,6 @@ type hostPathProvisioner struct {
 	// Identity of this hostPathProvisioner, set to node's name. Used to identify
 	// "this" provisioner's PVs.
 	identity string
-
-	// Override the default reclaim-policy of dynamicly provisioned volumes
-	// (which is remove).
-	reclaimPolicy string
 }
 
 var _ controller.Provisioner = &hostPathProvisioner{}
@@ -78,17 +74,12 @@ func (p *hostPathProvisioner) Provision(_ context.Context, options controller.Pr
 
 	// Send a creation request of the computed path to every manager pod.
 	// Manager runs as DaemonSet. So this path is going to be created on every node.
-	err := sendRequestToManager(path, createDir)
-	if err != nil {
+	if err := sendRequestToManager(path, createDir); err != nil {
 		return nil, controller.ProvisioningFinished, err
 	}
 
-	// If PV_RECLAIM_POLICY is defined, then, use that policy as the policy of every created node.
-	// Otherwise, use the storage class default policy.
+	// Get the storagge class reclaim policy.
 	reclaimPolicy := *options.StorageClass.ReclaimPolicy
-	if p.reclaimPolicy != "" {
-		reclaimPolicy = v1.PersistentVolumeReclaimPolicy(p.reclaimPolicy)
-	}
 
 	// Create the new persistent volume with the computed path and policy.
 	pv := &v1.PersistentVolume{
@@ -227,11 +218,14 @@ func (p *hostPathProvisioner) Delete(ctx context.Context, volume *v1.PersistentV
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	// If reclaim policy is not retain, then, sends DELETE request to remove the volume in
-	// every manager pod. This will delete the contents of this volume on every node.
+	// Send a DELETE request to managers to remove the volume in every manager pod.
+	// This will delete the contents of this volume on every node.
 	path := volume.Spec.PersistentVolumeSource.HostPath.Path
 	glog.Info("Removing backing directory: %v", path)
-	sendRequestToManager(path, deleteDir)
+
+	if err := sendRequestToManager(path, deleteDir); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -270,14 +264,10 @@ func main() {
 		}
 	}
 
-	// Get the reclaim policy from environment variables.
-	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
-
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
 	hostPathProvisioner := &hostPathProvisioner{
 		provisionerName,
-		reclaimPolicy,
 	}
 
 	// Start the provision controller which will dynamically provision hostPath
