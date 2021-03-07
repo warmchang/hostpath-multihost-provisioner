@@ -22,7 +22,4 @@ spec:
     spec:
       containers:
         - name: hostpath-multihost-provisioner
-          image: kubeboost/hostpath-multihost-provisioner:latest
-          env:
-#          - name: PV_RECLAIM_POLICY
-#            value: Retain
+          image: kubeboost/hostpath-multihost-provisioner:v1.0.0

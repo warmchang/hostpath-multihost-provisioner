@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: hostpath-multihost-manager
-        image: kubeboost/hostpath-multihost-manager:latest
+        image: kubeboost/hostpath-multihost-manager:v1.0.0
 
         # The volumes are always created under /var/kubernetes directory in
         # the manager pods. So this path shall not be changed.
