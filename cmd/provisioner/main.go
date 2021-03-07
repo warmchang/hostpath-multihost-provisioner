@@ -236,6 +236,7 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
     onDelete := volume.Spec.PersistentVolumeReclaimPolicy
     if onDelete == "Retain" {
 	    glog.Infof("Not removing backing directory because policy is Retain.")
+        p.applyReuseReleasedPolicy(volume)
         return nil
     }
 
@@ -248,7 +249,7 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 	return nil
 }
 
-func (p *hostPathProvisioner) retain(volume *v1.PersistentVolume) {
+func (p *hostPathProvisioner) applyReuseReleasedPolicy(volume *v1.PersistentVolume) {
     reuseReleasedPolicy := volume.Annotations[reuseReleasedPolicyLabel]
     if reuseReleasedPolicy == reusePolicyAlways {
         volume.Spec.ClaimRef = nil
