@@ -252,8 +252,10 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 func (p *hostPathProvisioner) applyReuseReleasedPolicy(volume *v1.PersistentVolume) {
     reuseReleasedPolicy := volume.Annotations[reuseReleasedPolicyLabel]
     if reuseReleasedPolicy == reusePolicyAlways {
+        glog.Info("Releasingg persistent volume to be used by any persistent volume claim.")
         volume.Spec.ClaimRef = nil
     } else if reuseReleasedPolicy == reusePolicySamePVCName {
+        glog.Info("Releasingg persistent volume to be used by persistent volume claim with the same name.")
         volume.Spec.ClaimRef.UID = ""
     }
 }
