@@ -38,11 +38,24 @@ import (
 )
 
 const (
-	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
-	provisionerIdentityLabel  = provisionerName + "-identity"
+	// The name used to identify this provisioner.
+	// NOTE: It is expected to have only one replica of the hostpath-multihost-provisioner so
+	// the same name is used for all the provisioner.
+	provisionerName = "kubeboost.github.com/hostpath-multihost-provisioner"
+
+	// The annotation key used to identify the resources owned by this provisioner.
+	provisionerIdentityLabel = provisionerName + "-identity"
+
+	// The service identifying manager pods. It shall be a headless service, to be able to retrieve
+	// all the pods managed by the SRV record.
 	storageManagerServiceName = "hostpath-multihost-manager"
+
+	// The port where manager pods are listening.
 	storageManagerServicePort = "8080"
-	pvDir                     = "/var/kubernetes"
+
+	// The directory in the manager pods where volumes are created. It is not configurable anymore
+	// as it does not provides any benefit for the user to change the location inside the pod.
+	pvDir = "/var/kubernetes"
 )
 
 type hostPathProvisioner struct {
