@@ -17,32 +17,32 @@ limitations under the License.
 package main
 
 import (
-    "context"
+	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
-    "net"
-    "net/http"
-    "net/url"
-    "fmt"
-    "strconv"
+	"strconv"
 
 	"github.com/golang/glog"
-	"sigs.k8s.io/sig-storage-lib-external-provisioner/v6/controller"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/sig-storage-lib-external-provisioner/v6/controller"
 	"syscall"
 )
 
 const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
-    provisionerIdentityLabel  = provisionerName + "-identity"
-    storageManagerServiceName = "hostpath-multihost-manager"
-    storageManagerServicePort = "8080"
-    pvDir                     = "/var/kubernetes"
+	provisionerIdentityLabel  = provisionerName + "-identity"
+	storageManagerServiceName = "hostpath-multihost-manager"
+	storageManagerServicePort = "8080"
+	pvDir                     = "/var/kubernetes"
 )
 
 type hostPathProvisioner struct {
@@ -59,25 +59,25 @@ var _ controller.Provisioner = &hostPathProvisioner{}
 
 // Provision sends a request to every manager to create a storage asset in every node and returns a PV object representing it.
 func (p *hostPathProvisioner) Provision(_ context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
-    // Compute path in the manager pods where persistent volumes are going to be created.
+	// Compute path in the manager pods where persistent volumes are going to be created.
 	path := path.Join(pvDir, options.PVC.Namespace+"-"+options.PVC.Name+"-"+options.PVName)
 	glog.Infof("Creating backing directory: %v", path)
 
-    // Send a creation request of the computed path to every manager pod.
-    // Manager runs as DaemonSet. So this path is going to be created on every node.
-    err := sendRequestToManager(path, createDir)
-    if err != nil {
-        return nil, controller.ProvisioningFinished, err
-    }
+	// Send a creation request of the computed path to every manager pod.
+	// Manager runs as DaemonSet. So this path is going to be created on every node.
+	err := sendRequestToManager(path, createDir)
+	if err != nil {
+		return nil, controller.ProvisioningFinished, err
+	}
 
-    // If PV_RECLAIM_POLICY is defined, then, use that policy as the policy of every created node.
-    // Otherwise, use the storage class default policy.
+	// If PV_RECLAIM_POLICY is defined, then, use that policy as the policy of every created node.
+	// Otherwise, use the storage class default policy.
 	reclaimPolicy := *options.StorageClass.ReclaimPolicy
 	if p.reclaimPolicy != "" {
 		reclaimPolicy = v1.PersistentVolumeReclaimPolicy(p.reclaimPolicy)
 	}
 
-    // Create the new persistent volume with the computed path and policy.
+	// Create the new persistent volume with the computed path and policy.
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: options.PVName,
@@ -99,18 +99,17 @@ func (p *hostPathProvisioner) Provision(_ context.Context, options controller.Pr
 		},
 	}
 
-    // Return the created persistent volume successfully.
+	// Return the created persistent volume successfully.
 	return pv, controller.ProvisioningFinished, nil
 }
 
-
 // This struct represents and http status error. Used to return error when status is not 200 OK.
 type httpStatusError struct {
-    status int
+	status int
 }
 
 func (e httpStatusError) Error() string {
-    return fmt.Sprintf("HTTP Status Error with status code: %v", e.status)
+	return fmt.Sprintf("HTTP Status Error with status code: %v", e.status)
 }
 
 // A function which performs a request agains the managers rest API.
@@ -122,93 +121,91 @@ type managerRequestFunction func(ip string, path string) error
 // The requests are sent in parallel to every manager pod.
 // It returns an error if any of the request fails.
 func sendRequestToManager(path string, requestFunc managerRequestFunction) error {
-    // Resolv every DNS behind headless service for manager.
-    glog.Infof("Looking for service %q.", storageManagerServiceName)
-    ips, err := net.LookupHost(storageManagerServiceName)
-    if err != nil {
-        glog.Errorf("Error looking for service: %q", err.Error())
-        return err
-    }
+	// Resolv every DNS behind headless service for manager.
+	glog.Infof("Looking for service %q.", storageManagerServiceName)
+	ips, err := net.LookupHost(storageManagerServiceName)
+	if err != nil {
+		glog.Errorf("Error looking for service: %q", err.Error())
+		return err
+	}
 
-    // Perform a request in parallel to every manager monitored by the manager service.
-    glog.Infof("Start sending requests.")
-    results := make(chan error)
-    for _, ip := range ips {
-        go func() {
-            results <- requestFunc(ip, path)
-        }()
-    }
+	// Perform a request in parallel to every manager monitored by the manager service.
+	glog.Infof("Start sending requests.")
+	results := make(chan error)
+	for _, ip := range ips {
+		go func() {
+			results <- requestFunc(ip, path)
+		}()
+	}
 
-    // Wait for every request to finish and return error if any fail.
-    for range ips {
-        err := <- results    
-        if err != nil {
-            return err
-        }
-    }
+	// Wait for every request to finish and return error if any fail.
+	for range ips {
+		err := <-results
+		if err != nil {
+			return err
+		}
+	}
 
-    return nil
+	return nil
 }
 
 // Send a POST request to create a directory at the given filesystem path to the provided ip address.
 // It returns an error if there is any problem sending the request.
 func createDir(ip string, path string) error {
-    targetUrl := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
+	targetUrl := fmt.Sprintf("http://%v:%v/directories", ip, storageManagerServicePort)
 
-    // Send the creation request to manager.
-    glog.Infof("Sending POST request to %q, with path %q.", targetUrl, path)
-    resp, err := http.PostForm(targetUrl, url.Values{"path": {path}})
-    if err != nil {
-        return err
-    }
+	// Send the creation request to manager.
+	glog.Infof("Sending POST request to %q, with path %q.", targetUrl, path)
+	resp, err := http.PostForm(targetUrl, url.Values{"path": {path}})
+	if err != nil {
+		return err
+	}
 
-    // Ensure to close the response body at the end.
-    defer resp.Body.Close()
-    
-    // If the status code is not successfull return an httpStatusError.
-    if resp.StatusCode != http.StatusOK {
-        return httpStatusError{resp.StatusCode}
-    }
+	// Ensure to close the response body at the end.
+	defer resp.Body.Close()
 
-    return nil
+	// If the status code is not successfull return an httpStatusError.
+	if resp.StatusCode != http.StatusOK {
+		return httpStatusError{resp.StatusCode}
+	}
+
+	return nil
 }
 
 // Send a DELETE request to remove a directory at the given filesystem path to the provided ip address.
 // It returns an error if there is any problem sending the request.
 func deleteDir(ip string, path string) error {
-    targetUrl := fmt.Sprintf("http://%v:%v/directories?path=%v", ip, storageManagerServicePort, path)
+	targetUrl := fmt.Sprintf("http://%v:%v/directories?path=%v", ip, storageManagerServicePort, path)
 
-    // Create DELETE request.
-    glog.Infof("Sending DELETE request to %q, with path %q.", targetUrl, path)
-    req, err := http.NewRequest(http.MethodDelete, targetUrl, nil)
-    if err != nil {
-        return err
-    }
+	// Create DELETE request.
+	glog.Infof("Sending DELETE request to %q, with path %q.", targetUrl, path)
+	req, err := http.NewRequest(http.MethodDelete, targetUrl, nil)
+	if err != nil {
+		return err
+	}
 
-    // Send DELETE request to manager.
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        return err
-    }
+	// Send DELETE request to manager.
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
 
-    // Ensure to close the response body at the end.
-    defer resp.Body.Close()
-    
-    // If the status code is not successfull return an httpStatusError.
-    if resp.StatusCode != http.StatusOK {
-        return httpStatusError{resp.StatusCode}
-    }
+	// Ensure to close the response body at the end.
+	defer resp.Body.Close()
 
-    return nil
+	// If the status code is not successfull return an httpStatusError.
+	if resp.StatusCode != http.StatusOK {
+		return httpStatusError{resp.StatusCode}
+	}
+
+	return nil
 }
-
-
 
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
 func (p *hostPathProvisioner) Delete(ctx context.Context, volume *v1.PersistentVolume) error {
-    // Check that the deleted volume is managed by this provisioner. Otherwise, ignore it.
+	// Check that the deleted volume is managed by this provisioner. Otherwise, ignore it.
 	ann, ok := volume.Annotations[provisionerIdentityLabel]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
@@ -217,11 +214,11 @@ func (p *hostPathProvisioner) Delete(ctx context.Context, volume *v1.PersistentV
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-    // If reclaim policy is not retain, then, sends DELETE request to remove the volume in
-    // every manager pod. This will delete the contents of this volume on every node.
+	// If reclaim policy is not retain, then, sends DELETE request to remove the volume in
+	// every manager pod. This will delete the contents of this volume on every node.
 	path := volume.Spec.PersistentVolumeSource.HostPath.Path
 	glog.Info("Removing backing directory: %v", path)
-    sendRequestToManager(path, deleteDir)
+	sendRequestToManager(path, deleteDir)
 
 	return nil
 }
@@ -250,8 +247,8 @@ func main() {
 		glog.Fatalf("Error getting server version: %v", err)
 	}
 
-    // Allow to enable or disable leader election using environment variable ENABLE_LEADER_ELECTION.
-    leaderElection := true
+	// Allow to enable or disable leader election using environment variable ENABLE_LEADER_ELECTION.
+	leaderElection := true
 	leaderElectionEnv := os.Getenv("ENABLE_LEADER_ELECTION")
 	if leaderElectionEnv != "" {
 		leaderElection, err = strconv.ParseBool(leaderElectionEnv)
@@ -260,25 +257,25 @@ func main() {
 		}
 	}
 
-    // Get the reclaim policy from environment variables.
+	// Get the reclaim policy from environment variables.
 	reclaimPolicy := os.Getenv("PV_RECLAIM_POLICY")
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	hostPathProvisioner := &hostPathProvisioner {
-        provisionerName, 
-        reclaimPolicy,        
-    }
+	hostPathProvisioner := &hostPathProvisioner{
+		provisionerName,
+		reclaimPolicy,
+	}
 
 	// Start the provision controller which will dynamically provision hostPath
 	// PVs
-	pc := controller.NewProvisionController(clientset, 
-        provisionerName, 
-        hostPathProvisioner,
-        serverVersion.GitVersion,
-        controller.LeaderElection(leaderElection),
-    )
+	pc := controller.NewProvisionController(clientset,
+		provisionerName,
+		hostPathProvisioner,
+		serverVersion.GitVersion,
+		controller.LeaderElection(leaderElection),
+	)
 
-    // Start executing the provisioner.
+	// Start executing the provisioner.
 	pc.Run(context.Background())
 }
