@@ -40,19 +40,12 @@ import (
 const (
 	provisionerName           = "kubeboost.github.com/hostpath-multihost-provisioner"
     provisionerIdentityLabel  = provisionerName + "-identity"
-    reuseReleasedPolicyLabel  = provisionerName + "-reuse-policy"
     storageManagerServiceName = "hostpath-multihost-manager"
     storageManagerServicePort = "8080"
     pvDir                     = "/var/kubernetes"
-    reusePolicyNever          = "Never"
-    reusePolicySamePVCName    = "SamePVCName"
-    reusePolicyAlways         = "Always"
 )
 
 type hostPathProvisioner struct {
-    // Kubernetes client to fetch PVCs to check if they are available.
-    client kubernetes.Interface
-
 	// Identity of this hostPathProvisioner, set to node's name. Used to identify
 	// "this" provisioner's PVs.
 	identity string
@@ -84,19 +77,12 @@ func (p *hostPathProvisioner) Provision(_ context.Context, options controller.Pr
 		reclaimPolicy = v1.PersistentVolumeReclaimPolicy(p.reclaimPolicy)
 	}
 
-    // Get the reuse released policy from the storage class if exists.
-    reuseReleasedPolicy, ok := options.StorageClass.Annotations[reuseReleasedPolicyLabel]
-    if !ok {
-        reuseReleasedPolicy = reusePolicyNever
-    }
-
     // Create the new persistent volume with the computed path and policy.
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: options.PVName,
 			Annotations: map[string]string{
 				provisionerIdentityLabel: p.identity,
-                reuseReleasedPolicyLabel: reuseReleasedPolicy,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -221,7 +207,7 @@ func deleteDir(ip string, path string) error {
 
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
-func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVolume) error {
+func (p *hostPathProvisioner) Delete(ctx context.Context, volume *v1.PersistentVolume) error {
     // Check that the deleted volume is managed by this provisioner. Otherwise, ignore it.
 	ann, ok := volume.Annotations[provisionerIdentityLabel]
 	if !ok {
@@ -231,33 +217,13 @@ func (p *hostPathProvisioner) Delete(_ context.Context, volume *v1.PersistentVol
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-    // Check the reclaim policy of the deleted volume. If retain do not delete the contents
-    // of the volume.
-    onDelete := volume.Spec.PersistentVolumeReclaimPolicy
-    if onDelete == "Retain" {
-	    glog.Infof("Not removing backing directory because policy is Retain.")
-        p.applyReuseReleasedPolicy(volume)
-        return nil
-    }
-
-    // If reclaim policy is not retain, then, delete send delete to remove the volume in
-    // every manager pod. This will delete the contents of this volume in every node.
+    // If reclaim policy is not retain, then, sends DELETE request to remove the volume in
+    // every manager pod. This will delete the contents of this volume on every node.
 	path := volume.Spec.PersistentVolumeSource.HostPath.Path
 	glog.Info("Removing backing directory: %v", path)
     sendRequestToManager(path, deleteDir)
 
 	return nil
-}
-
-func (p *hostPathProvisioner) applyReuseReleasedPolicy(volume *v1.PersistentVolume) {
-    reuseReleasedPolicy := volume.Annotations[reuseReleasedPolicyLabel]
-    if reuseReleasedPolicy == reusePolicyAlways {
-        glog.Info("Releasingg persistent volume to be used by any persistent volume claim.")
-        volume.Spec.ClaimRef = nil
-    } else if reuseReleasedPolicy == reusePolicySamePVCName {
-        glog.Info("Releasingg persistent volume to be used by persistent volume claim with the same name.")
-        volume.Spec.ClaimRef.UID = ""
-    }
 }
 
 func main() {
@@ -300,7 +266,6 @@ func main() {
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
 	hostPathProvisioner := &hostPathProvisioner {
-        clientset,
         provisionerName, 
         reclaimPolicy,        
     }
