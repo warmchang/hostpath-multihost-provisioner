@@ -1,20 +1,23 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 	"os"
-    "flag"
+	"syscall"
 
 	"github.com/golang/glog"
 )
 
 // Start a server listening at port 8080 and route /.
 func main() {
-    // Add flags for glog.
+	syscall.Umask(0)
+
+	// Add flags for glog.
 	flag.Parse()
 	flag.Set("logtostderr", "true")
 
-    // Initialize HTTP server.
+	// Initialize HTTP server.
 	const port = "8080"
 	http.HandleFunc("/", router)
 
