@@ -27,6 +27,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"time"
 
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
@@ -140,7 +141,7 @@ func sendRequestToManager(path string, requestFunc managerRequestFunction) error
 	glog.Infof("Start sending requests.")
 	results := make(chan error)
 	for _, ip := range ips {
-		go func() {
+		go func(ip string) {
 			var result error
 			// Try up to max retries for the request to succeed.
 			for retries := 0; retries < maxRetries; retries++ {
@@ -148,9 +149,12 @@ func sendRequestToManager(path string, requestFunc managerRequestFunction) error
 				if result == nil {
 					break
 				}
+
+				glog.Infof("Failed to send request to %q. Retry %v of %v.", ip, retries, maxRetries)
+				time.Sleep(1)
 			}
 			results <- result
-		}()
+		}(ip)
 	}
 
 	// Wait for every request to finish and return error if any fail.
