@@ -56,6 +56,9 @@ const (
 	// The directory in the manager pods where volumes are created. It is not configurable anymore
 	// as it does not provides any benefit for the user to change the location inside the pod.
 	pvDir = "/var/kubernetes"
+
+	// Max number of times a request is retried.
+	maxRetries = 5
 )
 
 type hostPathProvisioner struct {
@@ -138,7 +141,15 @@ func sendRequestToManager(path string, requestFunc managerRequestFunction) error
 	results := make(chan error)
 	for _, ip := range ips {
 		go func() {
-			results <- requestFunc(ip, path)
+			var result error
+			// Try up to max retries for the request to succeed.
+			for retries := 0; retries < maxRetries; retries++ {
+				result = requestFunc(ip, path)
+				if result == nil {
+					break
+				}
+			}
+			results <- result
 		}()
 	}
 
